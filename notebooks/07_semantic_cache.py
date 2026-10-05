@@ -125,7 +125,7 @@ for th in (0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95):
 ttl_cache = SemanticCache(client=client, embedder=embedder, threshold=0.75, ttl_s=1800)
 ttl_cache.put("acme", "giá GPU hiện tại là bao nhiêu", "Khoảng $2/giờ cho A100.")
 
-for jump in (0, 600, 3600):
+for jump in (0, 600, 3000):
     ttl_cache.advance(jump)
     hit = ttl_cache.get("acme", "giá GPU hiện tại là bao nhiêu")
     print(f"t = {ttl_cache._clock:>6.0f}s  → {'HIT' if hit else 'MISS (hết hạn)'}")

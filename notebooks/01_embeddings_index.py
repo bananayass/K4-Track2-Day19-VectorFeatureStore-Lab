@@ -40,6 +40,10 @@ with (DATA / "corpus_vn.jsonl").open(encoding="utf-8") as f:
 print(f"Corpus size: {len(docs)} docs")
 print(f"First doc:")
 print(json.dumps(docs[0], ensure_ascii=False, indent=2))
+required_fields = {"doc_id", "topic", "title", "text"}
+assert len(docs) == 1000, f"expected 1000 docs, got {len(docs)}"
+assert required_fields <= docs[0].keys(), f"missing fields: {required_fields - docs[0].keys()}"
+print(f"First record fields OK: {', '.join(sorted(required_fields))}")
 
 # %% [markdown]
 # ## 2. Embedding model: `BAAI/bge-small-en-v1.5`
@@ -71,7 +75,7 @@ client.create_collection(
 )
 
 # %% [markdown]
-# ## 4. TODO — embed + upsert toàn bộ corpus
+# ## 4. Embed + upsert toàn bộ corpus
 #
 # Embed `title + " " + text` cho từng doc, batch theo 64 docs/lần (fastembed
 # CPU-bound, batch=64 là sweet spot). Upsert vào Qdrant collection `lab19`.

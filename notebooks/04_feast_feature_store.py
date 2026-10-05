@@ -16,6 +16,7 @@
 
 # %%
 import _setup  # noqa: F401
+import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,6 +27,9 @@ REPO_ROOT = Path(_setup.__file__).resolve().parent.parent
 FEAST_DIR = REPO_ROOT / "app" / "feast_repo"
 FEAST_DATA = FEAST_DIR / "data"
 FEAST_DATA.mkdir(exist_ok=True)
+CORPUS_PATH = REPO_ROOT / "data" / "corpus_vn.jsonl"
+corpus_docs = [json.loads(line) for line in CORPUS_PATH.open(encoding="utf-8")]
+assert len(corpus_docs) == 1000, f"expected 1000 corpus docs, got {len(corpus_docs)}"
 
 # %% [markdown]
 # ## 1. Sinh dữ liệu offline (Parquet) cho 3 feature views
@@ -38,7 +42,7 @@ NOW = datetime.now(timezone.utc).replace(microsecond=0)
 
 
 def make_user_profile(n_users: int = 100) -> pl.DataFrame:
-    return pl.DataFrame({
+    profiles = pl.DataFrame({
         "user_id": [f"u_{i:03d}" for i in range(n_users)],
         "reading_speed_wpm": [180 + (i * 7) % 200 for i in range(n_users)],
         "preferred_language": ["vi" if i % 3 != 0 else "en" for i in range(n_users)],
@@ -46,13 +50,22 @@ def make_user_profile(n_users: int = 100) -> pl.DataFrame:
             ["ai_ml", "cloud", "security", "database", "devops"][i % 5]
             for i in range(n_users)
         ],
-        "event_timestamp": [NOW - timedelta(hours=i % 48) for i in range(n_users)],
+        # Keep a pre-event snapshot for the three PIT examples below.
+        "event_timestamp": [NOW - timedelta(hours=max(3, i % 48)) for i in range(n_users)],
     })
+    # A later update makes the PIT check observable: an event at NOW-2h must
+    # still see the earlier 187 WPM value, while online serving sees 188 WPM.
+    later_u001 = profiles.filter(pl.col("user_id") == "u_001").with_columns(
+        pl.lit(188).cast(pl.Int64).alias("reading_speed_wpm"),
+        pl.lit(NOW - timedelta(hours=1)).alias("event_timestamp"),
+    )
+    return pl.concat([profiles, later_u001], how="vertical")
 
 
-def make_item_popularity(n_items: int = 1000) -> pl.DataFrame:
+def make_item_popularity(doc_ids: list[str]) -> pl.DataFrame:
+    n_items = len(doc_ids)
     return pl.DataFrame({
-        "doc_id": [f"item_{i:04d}" for i in range(n_items)],
+        "doc_id": doc_ids,
         "click_count_24h": [(i * 13) % 500 for i in range(n_items)],
         "ctr_7d": [round(((i * 7) % 100) / 100.0, 3) for i in range(n_items)],
         "avg_dwell_seconds": [10.0 + (i * 0.7) % 90 for i in range(n_items)],
@@ -70,7 +83,7 @@ def make_query_velocity(n_users: int = 100) -> pl.DataFrame:
 
 
 make_user_profile().write_parquet(FEAST_DATA / "user_profile.parquet")
-make_item_popularity().write_parquet(FEAST_DATA / "item_popularity.parquet")
+make_item_popularity([d["doc_id"] for d in corpus_docs]).write_parquet(FEAST_DATA / "item_popularity.parquet")
 make_query_velocity().write_parquet(FEAST_DATA / "query_velocity.parquet")
 print(f"Wrote 3 Parquet sources to {FEAST_DATA}")
 for p in sorted(FEAST_DATA.glob("*.parquet")):
@@ -94,6 +107,21 @@ if res.stderr:
     print("STDERR:")
     print(res.stderr)
 assert res.returncode == 0, f"feast apply failed: {res.stderr}"
+
+views_res = subprocess.run(
+    ["feast", "feature-views", "list"],
+    cwd=str(FEAST_DIR),
+    capture_output=True, text=True, check=False,
+)
+print("Registered feature views:")
+print(views_res.stdout)
+assert views_res.returncode == 0, f"feature-views list failed: {views_res.stderr}"
+for view_name in (
+    "user_profile_features",
+    "item_popularity_features",
+    "query_velocity_features",
+):
+    assert view_name in views_res.stdout, f"missing feature view: {view_name}"
 
 # %% [markdown]
 # ## 3. `feast materialize-incremental` — load offline → online
@@ -147,7 +175,7 @@ print(f"Single lookup: {single_latency_ms:.2f}ms")
 print({k: v[0] for k, v in features.items()})
 
 # %% [markdown]
-# ## 5. TODO — Batch latency benchmark (100 lookups, P99)
+# ## 5. Batch latency benchmark (100 lookups, P99)
 
 # %%
 latencies: list[float] = []
@@ -196,12 +224,16 @@ historical = fs.get_historical_features(
     ],
 ).to_df()
 print(historical)
+assert len(historical) == 3, f"expected 3 PIT rows, got {len(historical)}"
+u001_pit_speed = int(historical.loc[historical["user_id"] == "u_001", "reading_speed_wpm"].iloc[0])
+assert u001_pit_speed == 187, f"PIT leaked the later u_001 value: {u001_pit_speed}"
+print("PIT verified: u_001 event sees 187 WPM; the later online snapshot is 188 WPM")
 
 # %% [markdown]
 # ## Deliverable evidence
 #
 # 1. Output cell 2: 3 Parquet files generated.
-# 2. Output cell 3: `feast apply` STDOUT showing "Created feature view <name>" × 3.
+# 2. Output cell 3: `feast apply` STDOUT + `feature-views list` showing all 3 views.
 # 3. Output cell 4: `materialize` log showing rows materialized to online store.
 # 4. Output cell 5: 1 online lookup result + latency.
 # 5. Output cell 6: 100-lookup P50/P95/P99 + PASS line.

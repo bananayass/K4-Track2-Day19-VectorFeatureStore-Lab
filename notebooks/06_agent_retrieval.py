@@ -178,6 +178,10 @@ print("features   :", ctx["features"] or "(chưa có — chạy NB4 trước)")
 print("affinity   :", ctx["affinity_used"])
 print("tool_args  :", ctx["tool_args"])
 print("doc_ids    :", ctx["doc_ids"][:5], "…")
+if store is not None:
+    assert ctx["features"].get("topic_affinity", [None])[0] is not None
+    assert ctx["features"].get("queries_last_hour", [None])[0] is not None
+    assert ctx["doc_ids"], "context should include retrieved document IDs"
 
 # %% [markdown]
 # ## Deliverable evidence

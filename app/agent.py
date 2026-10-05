@@ -235,7 +235,10 @@ def build_context(user_id: str, question: str, tool: RetrievalTool,
         try:
             features = feature_store.get_online_features(
                 features=["user_profile_features:topic_affinity",
-                          "user_profile_features:preferred_language"],
+                          "user_profile_features:preferred_language",
+                          "user_profile_features:reading_speed_wpm",
+                          "query_velocity_features:queries_last_hour",
+                          "query_velocity_features:distinct_topics_24h"],
                 entity_rows=[{"user_id": user_id}],
             ).to_dict()
         except Exception as exc:                      # noqa: BLE001

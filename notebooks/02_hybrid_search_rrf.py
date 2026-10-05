@@ -81,7 +81,7 @@ def search_semantic(query: str, top_k: int = TOP_K) -> list[str]:
 
 
 # %% [markdown]
-# ## 3. TODO — implement Reciprocal Rank Fusion
+# ## 3. Reciprocal Rank Fusion
 #
 # Công thức (deck §3):
 #
@@ -100,8 +100,7 @@ def search_hybrid(query: str, top_k: int = TOP_K, rrf_k: int = RRF_K) -> list[st
     kw_ids = search_keyword(query, depth)
     sem_ids = search_semantic(query, depth)
 
-    # TODO: implement RRF fusion below.
-    # Hint: dict[doc_id, float] cộng 1/(rrf_k + rank) từ mỗi retriever.
+    # dict[doc_id, float] cộng 1/(rrf_k + rank) từ mỗi retriever.
     # rank starts at 1, not 0.
     rrf: dict[str, float] = {}
     for rank, doc_id in enumerate(kw_ids, start=1):
@@ -151,8 +150,8 @@ print(f"  Hybrid  (RRF=60) : {statistics.mean(p_hyb):.1%}   <- should win")
 # %% [markdown]
 # ## 5. Slice theo loại query
 #
-# Golden set có 3 loại: `exact` (BM25 ưu thế), `paraphrase` (vector ưu thế),
-# `mixed` (hybrid ưu thế). In separate scores để thấy *tại sao* hybrid thắng.
+# Golden set có 3 lát cắt: `exact`, `paraphrase`, `mixed`. Đây là giả thuyết
+# về loại tín hiệu hữu ích; hãy đọc số đo thực tế vì Lite dùng embedding English.
 
 # %%
 from collections import defaultdict
@@ -174,20 +173,17 @@ for t in ("exact", "paraphrase", "mixed"):
 # %% [markdown]
 # ### Diễn giải kết quả
 #
-# - `exact` queries chứa từ kỹ thuật verbatim trong corpus → BM25 mạnh, hybrid
-#   thường ngang bằng (keyword signal đã đủ mạnh).
-# - `paraphrase` queries dùng từ Việt **không** xuất hiện verbatim trong docs
-#   → cả BM25 và vector đều giảm điểm. Trên synthetic corpus 1000-doc với
-#   embedding model `BAAI/bge-small-en-v1.5` (English-trained), semantic
-#   recall trên Vietnamese paraphrases yếu (24-32%). **Đổi sang `bge-m3`
-#   (full Docker path) sẽ giúp semantic thắng paraphrase queries** — đây là
-#   teaching moment cho "embedding model choice matters".
-# - `mixed` queries có cả từ exact + ý tưởng paraphrased → **hybrid thắng rõ**
-#   (~100% vs 97-98% pure modes). Đây là pattern production-relevant nhất
-#   vì user thật ít khi viết query 100% exact term hoặc 100% paraphrase.
+# - `exact`: BM25 và Hybrid cùng đạt 96.7%, vector đạt 88.7%; từ khóa verbatim
+#   giúp BM25, và RRF giữ được thứ hạng.
+# - `paraphrase`: Lite đo BM25 33.3%, Hybrid 32.0%, vector 24.0%. Mô hình
+#   `BAAI/bge-small-en-v1.5` thiên về tiếng Anh nên không thắng paraphrase Việt.
+#   Mô hình đa ngữ như bge-m3 có thể cải thiện, nhưng cần lập chỉ mục lại và đo
+#   trên cùng golden set thay vì mặc định rằng kết quả sẽ tốt hơn.
+# - `mixed`: Hybrid đạt 100%, cao hơn vector 98.5% và BM25 97.0%; hai nguồn tín
+#   hiệu cùng đóng góp ở loại câu hỏi này.
 #
-# Hybrid thắng *trung bình* nhờ robust trên mọi kiểu query — đó là lý do
-# production luôn default hybrid (deck §3, slide "Hybrid Search Mechanics").
+# Hybrid dẫn đầu trung bình (78.6% so với 77.8% BM25 và 73.2% vector) nhờ nhóm
+# mixed và exact; phép đo cũng cho thấy hybrid không tự khắc phục giới hạn model.
 
 # %% [markdown]
 # ## Deliverable evidence

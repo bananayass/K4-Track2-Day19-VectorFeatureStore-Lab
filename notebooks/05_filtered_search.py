@@ -73,11 +73,13 @@ cases = [
     ("acme AND ≥2026",  *combo_filter("acme", 20260101)),
 ]
 
-print(f"{'filter':<18}{'sel%':>7}{'post':>8}{'fANN':>8}{'post_ms':>9}{'fann_ms':>9}")
+print(f"{'filter':<18}{'sel%':>7}{'pre':>8}{'post':>8}{'fANN':>8}"
+      f"{'pre_ms':>9}{'post_ms':>9}{'fann_ms':>9}")
 rows = []
 for name, pred, qf in cases:
     sel = selectivity(index.docs, pred) * 100
-    truth = index.pre_filter(QUERY, pred, k=10).doc_ids
+    pre = index.pre_filter(QUERY, pred, k=10)
+    truth = pre.doc_ids
     post = index.post_filter(QUERY, pred, k=10, fetch_k=10)
     if qf is None:
         fann_r, fann_ms = 1.0, float("nan")
@@ -85,8 +87,9 @@ for name, pred, qf in cases:
         f = index.filtered_ann(QUERY, qf, k=10)
         fann_r, fann_ms = f.recall_against(truth), f.latency_ms
     rows.append((name, sel, post.recall_against(truth), fann_r))
-    print(f"{name:<18}{sel:7.1f}{post.recall_against(truth):8.2f}{fann_r:8.2f}"
-          f"{post.latency_ms:9.1f}{fann_ms:9.1f}")
+    print(f"{name:<18}{sel:7.1f}{pre.recall_against(truth):8.2f}"
+          f"{post.recall_against(truth):8.2f}{fann_r:8.2f}"
+          f"{pre.latency_ms:9.1f}{post.latency_ms:9.1f}{fann_ms:9.1f}")
 
 # %% [markdown]
 # **Đọc bảng:** filter càng chặt (`sel%` càng nhỏ), post-filter càng sập. Ở
